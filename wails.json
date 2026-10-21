@@ -1,0 +1,10 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "FlipMuncher",
+  "outputfilename": "FlipMuncher",
+  "frontend:install": "",
+  "frontend:build": "",
+  "author": {
+    "name": "Matthewuwu"
+  }
+}

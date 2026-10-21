@@ -1,0 +1,40 @@
+#!/bin/sh
+# Blocks a push that would publish personal data.
+# Checks every commit about to leave this machine:
+#   1. author/committer e-mail must be a GitHub noreply address
+#   2. added lines must not contain e-mails, local user paths or your own patterns
+# Own patterns (name, real e-mail, ...): one extended regex per line in .git/pii-patterns.
+# That file stays local, so the data itself is never committed.
+# Enable once per clone:  git config core.hooksPath .githooks
+zero=0000000000000000000000000000000000000000
+fail=0
+extra=$(git rev-parse --git-path pii-patterns)
+generic='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|[A-Za-z]:\\+Users\\+[^\\ ]+|/home/[a-z][a-z0-9_-]*/|/Users/[A-Za-z][A-Za-z0-9_ -]*/'
+allowed='@users\.noreply\.github\.com|noreply@github\.com|@example\.(com|org)|git@github\.com'
+
+while read -r _ local_sha _ remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then range="$local_sha"; else range="$remote_sha..$local_sha"; fi
+
+  bad=$(git log --format='%h %ae %ce' "$range" | grep -vE '^[0-9a-f]+ [^ ]*(@users\.noreply\.github\.com|noreply@github\.com) [^ ]*(@users\.noreply\.github\.com|noreply@github\.com)$')
+  if [ -n "$bad" ]; then
+    echo "pre-push: commits with a personal e-mail (use your GitHub noreply address):" >&2
+    echo "$bad" >&2
+    fail=1
+  fi
+
+  added=$(git log -p --format= "$range" | grep -E '^\+[^+]')
+  hits=$(printf '%s\n' "$added" | grep -oE "$generic" | grep -vE "$allowed" | sort -u)
+  if [ -f "$extra" ]; then
+    own=$(printf '%s\n' "$added" | grep -oiEf "$extra" | sort -u)
+    hits=$(printf '%s\n%s\n' "$hits" "$own" | sed '/^$/d' | sort -u)
+  fi
+  if [ -n "$hits" ]; then
+    echo "pre-push: possible personal data in added lines:" >&2
+    echo "$hits" >&2
+    fail=1
+  fi
+done
+
+[ "$fail" = 0 ] || { echo "pre-push: push blocked. Remove the data (rewrite history if needed), then push again." >&2; exit 1; }
+exit 0
